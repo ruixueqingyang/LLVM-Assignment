@@ -84,36 +84,31 @@ struct FuncPtrPass : public ModulePass {
   map<int, nameList> funcMap;
   list<Value *> valueList;
   StringRef funcName;
-  // Φ节点
-  void getPHINode(PHINode *pHINode) {
-    // incoming_values()的返回值类型是op_range
-    for (Value *inComingVal : pHINode->incoming_values()) {
-      if (pHINode = dyn_cast<PHINode>(inComingVal)) {
-        getPHINode(pHINode);
-      } else if (Argument *argument = dyn_cast<Argument>(inComingVal)) {
-        getArgument(argument);
-      } else if (Function *func = dyn_cast<Function>(inComingVal)) {
-        pushBackFunc(func->getName());
-      }
-    }
-  }
 
   void getCallInst(CallInst *callInst) {
+    errs() << "getCallInst"
+           << "\n";
     // 返回调用的函数，如果这是间接函数调用，则返回null
     Function *func = callInst->getCalledFunction();
-    // 如果是间接引用
-    if (func != NULL) {
+    // 如果是直接引用
+    if (func) {
       // BasicBlock迭代
       for (Function::iterator bb_i = func->begin(), bb_e = func->end();
            bb_i != bb_e; ++bb_i) {
         // Instruction迭代
         for (BasicBlock::iterator inst_i = bb_i->begin(), inst_e = bb_i->end();
              inst_i != inst_e; ++inst_i) {
+          errs() << "56565"
+                 << "\n";
           Instruction *inst = dyn_cast<Instruction>(inst_i);
           if (ReturnInst *ret = dyn_cast<ReturnInst>(inst)) {
             Value *value = ret->getReturnValue();
             if (Argument *argument = dyn_cast<Argument>(value)) {
               getArgument(argument);
+            } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
+              getPHINode(pHINode);
+            } else if (CallInst *callInst = dyn_cast<CallInst>(value)) {
+              getCallInst(callInst);
             }
           }
         }
@@ -130,10 +125,16 @@ struct FuncPtrPass : public ModulePass {
               for (BasicBlock::iterator inst_i = bb_i->begin(),
                                         inst_e = bb_i->end();
                    inst_i != inst_e; ++inst_i) {
+                errs() << "00000"
+                       << "\n";
                 Instruction *inst = dyn_cast<Instruction>(inst_i);
                 if (ReturnInst *ret = dyn_cast<ReturnInst>(inst)) {
+                  errs() << "1111"
+                         << "\n";
                   Value *value = ret->getReturnValue();
                   if (Argument *argument = dyn_cast<Argument>(value)) {
+                    errs() << "2222"
+                           << "\n";
                     getArgument(argument);
                   }
                 }
@@ -141,6 +142,21 @@ struct FuncPtrPass : public ModulePass {
             }
           }
         }
+      }
+    }
+  }
+  // Φ节点
+  void getPHINode(PHINode *pHINode) {
+    // incoming_values()的返回值类型是op_range
+    errs() << "getPHINode"
+           << "\n";
+    for (Value *inComingVal : pHINode->incoming_values()) {
+      if (pHINode = dyn_cast<PHINode>(inComingVal)) {
+        getPHINode(pHINode);
+      } else if (Argument *argument = dyn_cast<Argument>(inComingVal)) {
+        getArgument(argument);
+      } else if (Function *func = dyn_cast<Function>(inComingVal)) {
+        pushBackFunc(func->getName());
       }
     }
   }
@@ -152,8 +168,13 @@ struct FuncPtrPass : public ModulePass {
   void getArgument(Argument *arg) {
     // Return the index of this formal argument
     int index = arg->getArgNo();
-    // errs() << "index " << index << "\n";
+    errs() << "index " << index << "\n";
     Function *parentFunc = arg->getParent();
+    errs() << "arg " << (arg->getName()) << "\n";
+    errs() << "parentFunc " << (parentFunc->getName()) << "\n";
+    // if(parentFunc->user_empty()) {
+    //   errs()<<"yes"<<endl;
+    // }
     // iterator_range< use_iterator >   uses (),
     for (User *user : parentFunc->users()) {
       if (CallInst *callInst = dyn_cast<CallInst>(user)) {
@@ -162,17 +183,12 @@ struct FuncPtrPass : public ModulePass {
         if (Function *func = dyn_cast<Function>(value)) {
           pushBackFunc(func->getName());
         } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
-          for (User *user : pHINode->users()) {
-            if (CallInst *callInstCall = dyn_cast<CallInst>(user)) {
-              Value *value = callInstCall->getArgOperand(index);
-              if (Function *func = dyn_cast<Function>(value)) {
-                pushBackFunc(func->getName());
-              }
-            }
-          }
           getPHINode(pHINode);
         } else if (Argument *argument = dyn_cast<Argument>(value)) {
           getArgument(argument);
+        } else {
+          errs() << "else"
+                 << "\n";
         }
       } else if (PHINode *pHINode = dyn_cast<PHINode>(user)) {
         for (User *user : pHINode->users()) {
@@ -180,18 +196,33 @@ struct FuncPtrPass : public ModulePass {
             Value *value = callInst->getOperand(index);
             if (Function *func = dyn_cast<Function>(value)) {
               pushBackFunc(func->getName());
+            } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
+              getPHINode(pHINode);
+            } else if (Argument *argument = dyn_cast<Argument>(value)) {
+              getArgument(argument);
+            } else {
+              errs() << "else / else / Function"
+                     << "\n";
             }
+          } else {
+            errs() << "else / else / CallInst"
+                   << "\n";
           }
         }
+      } else {
+        errs() << "else / else"
+               << "\n";
       }
     }
+    errs() << "not for"
+           << "\n";
   }
 
   // push back function
   void pushBackFunc(StringRef name) {
     if (find(funcList.begin(), funcList.end(), name) == funcList.end()) {
       funcList.push_back(name);
-      // errs() << name << "\n";
+      errs() << name << "\n";
     }
   }
 
@@ -208,6 +239,7 @@ struct FuncPtrPass : public ModulePass {
     } else if (Argument *argument = dyn_cast<Argument>(value)) {
       getArgument(argument);
     } else if (CallInst *callInst = dyn_cast<CallInst>(value)) {
+      ;
       getCallInst(callInst);
     }
   }
@@ -243,16 +275,11 @@ struct FuncPtrPass : public ModulePass {
                 map<int, nameList>::iterator it = funcMap.begin(),
                                              ie = funcMap.end();
                 StringRef name = func->getName();
-                // errs() << "callLine " << callLine << " " << name << "\n";
                 if (it == ie) {
-                  // errs() << "it == ie    " << callLine << " " << name <<
-                  // "\n";
                   funcList.push_back(name);
                   funcMap.insert(pair<int, nameList>(callLine, funcList));
                 }
                 for (; it != ie; ++it) {
-                  // errs() << "it != ie  " << callLine << " it->first " <<
-                  // it->first << "\n";
                   if (it->first == callLine) {
                     it->second.push_back(func->getName());
                   } else { // 先插入一个空list,再次遍历的时候插入值
@@ -265,7 +292,7 @@ struct FuncPtrPass : public ModulePass {
         }
       }
     }
-
+    // 输出结果
     for (map<int, nameList>::iterator map_it = funcMap.begin(),
                                       map_ie = funcMap.end();
          map_it != map_ie; ++map_it) {
