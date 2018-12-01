@@ -35,14 +35,18 @@
 using namespace llvm;
 
 /*********add**********/
-#include <iostream>
+// #include <iostream>
 #include <list>
 #include <llvm/IR/BasicBlock.h>   //  BasicBlock
+#include <llvm/IR/Constants.h>    //  ConstantInt
 #include <llvm/IR/Function.h>     //  Function
 #include <llvm/IR/Instruction.h>  //  Instruction
 #include <llvm/IR/Instructions.h> //  CallInst  PHINode
+#include <llvm/IR/Instructions.h> //  BranchInst
 #include <llvm/IR/Module.h>       //  Moudle
 #include <llvm/IR/User.h>         //  User
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/raw_ostream.h>
 using namespace std;
 /*********add**********/
 
@@ -75,29 +79,20 @@ char EnableFunctionOptPass::ID = 0;
 struct FuncPtrPass : public ModulePass {
   static char ID; // Pass identification, replacement for typeid
   FuncPtrPass() : ModulePass(ID) {}
-
-  list<StringRef> funcList;
+  using nameList = list<StringRef>;
+  nameList funcList;
+  map<int, nameList> funcMap;
   list<Value *> valueList;
   StringRef funcName;
   // Φ节点
   void getPHINode(PHINode *pHINode) {
     // incoming_values()的返回值类型是op_range
     for (Value *inComingVal : pHINode->incoming_values()) {
-
       if (pHINode = dyn_cast<PHINode>(inComingVal)) {
-        errs() << "PHINode / getPHINode"
-               << "\n";
         getPHINode(pHINode);
-      } else if (BranchInst *branchInst = dyn_cast<BranchInst>(inComingVal)) {
-        errs() << "BranchInst / getFunction"
-               << "\n";
       } else if (Argument *argument = dyn_cast<Argument>(inComingVal)) {
-        errs() << "Argument / getPHINode"
-               << "\n";
         getArgument(argument);
       } else if (Function *func = dyn_cast<Function>(inComingVal)) {
-        errs() << "Function / getPHINode"
-               << "\n";
         pushBackFunc(func->getName());
       }
     }
@@ -124,16 +119,10 @@ struct FuncPtrPass : public ModulePass {
         }
       }
     } else {
-      errs() << "///////////////////  direct ////////////////////"
-             << "\n";
       Value *value = callInst->getCalledValue();
       if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
-        errs() << "////////////////PHINode"
-               << "\n";
         for (Value *inComingValue : pHINode->incoming_values()) {
           if (Function *func = dyn_cast<Function>(inComingValue)) {
-            errs() << "////////////////Function"
-                   << "\n";
             // BasicBlock迭代
             for (Function::iterator bb_i = func->begin(), bb_e = func->end();
                  bb_i != bb_e; ++bb_i) {
@@ -143,44 +132,27 @@ struct FuncPtrPass : public ModulePass {
                    inst_i != inst_e; ++inst_i) {
                 Instruction *inst = dyn_cast<Instruction>(inst_i);
                 if (ReturnInst *ret = dyn_cast<ReturnInst>(inst)) {
-                  errs() << "////////////////ReturnInst"
-                         << "\n";
                   Value *value = ret->getReturnValue();
                   if (Argument *argument = dyn_cast<Argument>(value)) {
-                    errs() << "////////////////Argument"
-                           << "\n";
                     getArgument(argument);
-                  } else {
-                    errs() << "//////////////// else   /  Argument"
-                           << "\n";
                   }
-                } else {
-                  errs() << "//////////////// else  /  Function"
-                         << "\n";
                 }
               }
             }
-          } else {
-            errs() << "//////////////// else  /  ReturnInst"
-                   << "\n";
           }
         }
-      } else {
-        errs() << "//////////////// else  /  PHINode"
-               << "\n";
       }
     }
   }
 
   /*
    * User: 所有llvm节点的基类,
-   *对User类的操作都直接作用于其所指向的llvm的Value类型
-   *
+   * 对User类的操作都直接作用于其所指向的llvm的Value类型
    **/
   void getArgument(Argument *arg) {
     // Return the index of this formal argument
     int index = arg->getArgNo();
-    errs() << "index " << index << "\n";
+    // errs() << "index " << index << "\n";
     Function *parentFunc = arg->getParent();
     // iterator_range< use_iterator >   uses (),
     for (User *user : parentFunc->users()) {
@@ -188,45 +160,29 @@ struct FuncPtrPass : public ModulePass {
         // 获得参数操作数
         Value *value = callInst->getArgOperand(index);
         if (Function *func = dyn_cast<Function>(value)) {
-          errs() << "Function / CallInst / getArgument"
-                 << "\n";
           pushBackFunc(func->getName());
         } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
           for (User *user : pHINode->users()) {
             if (CallInst *callInstCall = dyn_cast<CallInst>(user)) {
               Value *value = callInstCall->getArgOperand(index);
               if (Function *func = dyn_cast<Function>(value)) {
-                errs() << "Function / PHINode / CallInst / getArgument"
-                       << "\n";
                 pushBackFunc(func->getName());
               }
             }
           }
           getPHINode(pHINode);
-        } else if (LoadInst *loadInst = dyn_cast<LoadInst>(value)) {
-          errs() << "LoadInst / CallInst / getArgument"
-                 << "\n";
         } else if (Argument *argument = dyn_cast<Argument>(value)) {
-          errs() << "Argument / CallInst / getArgument"
-                 << "\n";
           getArgument(argument);
         }
       } else if (PHINode *pHINode = dyn_cast<PHINode>(user)) {
-        errs() << " / PHINode / getArgument"
-               << "\n";
         for (User *user : pHINode->users()) {
           if (CallInst *callInst = dyn_cast<CallInst>(user)) {
             Value *value = callInst->getOperand(index);
             if (Function *func = dyn_cast<Function>(value)) {
-              errs() << "Function / PHINode / getArgument"
-                     << "\n";
               pushBackFunc(func->getName());
             }
           }
         }
-      } else {
-        errs() << "else / getArgument"
-               << "\n";
       }
     }
   }
@@ -235,25 +191,10 @@ struct FuncPtrPass : public ModulePass {
   void pushBackFunc(StringRef name) {
     if (find(funcList.begin(), funcList.end(), name) == funcList.end()) {
       funcList.push_back(name);
-      errs() << name << "\n";
+      // errs() << name << "\n";
     }
   }
 
-  // show the result
-  void showResult(unsigned line) {
-    errs() << line << " : ";
-    auto it = funcList.begin();
-    auto ie = funcList.end();
-    if (it != ie) {
-      errs() << *it;
-      ++it;
-    }
-    for (; it != ie; ++it) {
-      errs() << ", " << *it;
-    }
-    errs() << "\n";
-    funcList.clear();
-  }
   /** Value: the base class of all values
    * Argument: an incoming formal argument to a Function
    * PHINode:
@@ -262,20 +203,11 @@ struct FuncPtrPass : public ModulePass {
   void getFunction(CallInst *callInst) {
     // Value　is the base class of all values
     Value *value = callInst->getCalledValue();
-    if (BranchInst *branchInst = dyn_cast<BranchInst>(value)) {
-      errs() << "BranchInst / getFunction"
-             << "\n";
-    } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
-      errs() << "PHINode / getFunction"
-             << "\n";
+    if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
       getPHINode(pHINode);
     } else if (Argument *argument = dyn_cast<Argument>(value)) {
-      errs() << "Argument / getFunction"
-             << "\n";
       getArgument(argument);
     } else if (CallInst *callInst = dyn_cast<CallInst>(value)) {
-      errs() << "CallInst / getFunction"
-             << "\n";
       getCallInst(callInst);
     }
   }
@@ -301,21 +233,54 @@ struct FuncPtrPass : public ModulePass {
             unsigned callLine = callInst->getDebugLoc().getLine();
             // 如果是间接引用
             if (!func) {
-              errs() << "************indirect function invocation************"
-                     << "\n";
+              funcList.clear();
               getFunction(callInst);
-              showResult(callLine);
+              funcMap.insert(pair<int, nameList>(callLine, funcList));
             } else {
               // Returns true if the function's name starts with "llvm."
               if (!func->isIntrinsic()) {
-                errs() << "************direct function invocation************"
-                       << "\n";
-                errs() << callLine << " : " << func->getName() << "\n";
+                funcList.clear();
+                map<int, nameList>::iterator it = funcMap.begin(),
+                                             ie = funcMap.end();
+                StringRef name = func->getName();
+                // errs() << "callLine " << callLine << " " << name << "\n";
+                if (it == ie) {
+                  // errs() << "it == ie    " << callLine << " " << name <<
+                  // "\n";
+                  funcList.push_back(name);
+                  funcMap.insert(pair<int, nameList>(callLine, funcList));
+                }
+                for (; it != ie; ++it) {
+                  // errs() << "it != ie  " << callLine << " it->first " <<
+                  // it->first << "\n";
+                  if (it->first == callLine) {
+                    it->second.push_back(func->getName());
+                  } else { // 先插入一个空list,再次遍历的时候插入值
+                    funcMap.insert(pair<int, nameList>(callLine, funcList));
+                  }
+                }
               }
             }
           }
         }
       }
+    }
+
+    for (map<int, nameList>::iterator map_it = funcMap.begin(),
+                                      map_ie = funcMap.end();
+         map_it != map_ie; ++map_it) {
+      errs() << map_it->first << " : ";
+      auto it = map_it->second.begin();
+      auto ie = map_it->second.end();
+
+      if (it != ie) {
+        errs() << *it;
+        ++it;
+      }
+      for (; it != ie; ++it) {
+        errs() << ", " << *it;
+      }
+      errs() << "\n";
     }
     return false;
   }
@@ -354,4 +319,9 @@ int main(int argc, char **argv) {
   /// Your pass to print Function and Call Instructions
   Passes.add(new FuncPtrPass());
   Passes.run(*M.get());
+
+  std::error_code EC;
+  llvm::raw_fd_ostream OS(InputFilename, EC, llvm::sys::fs::F_None);
+  WriteBitcodeToFile(&(*M), OS);
+  OS.flush();
 }
