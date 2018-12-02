@@ -46,7 +46,7 @@ using namespace llvm;
 #include <llvm/IR/Module.h>       //  Moudle
 #include <llvm/IR/User.h>         //  User
 #include <llvm/Support/FileSystem.h>
-#include <llvm/Support/raw_ostream.h>
+// #include <llvm/Support/raw_ostream.h>
 using namespace std;
 /*********add**********/
 
@@ -168,7 +168,7 @@ struct FuncPtrPass : public ModulePass {
           getPHINode(pHINode);
         } else if (Argument *argument = dyn_cast<Argument>(value)) {
           getArgument(argument);
-        } 
+        }
       } else if (PHINode *pHINode = dyn_cast<PHINode>(user)) {
         for (User *user : pHINode->users()) {
           if (CallInst *callInst = dyn_cast<CallInst>(user)) {
@@ -179,10 +179,10 @@ struct FuncPtrPass : public ModulePass {
               getPHINode(pHINode);
             } else if (Argument *argument = dyn_cast<Argument>(value)) {
               getArgument(argument);
-            } 
-          } 
+            }
+          }
         }
-      } 
+      }
     }
   }
 
@@ -313,10 +313,12 @@ int main(int argc, char **argv) {
 
   /// Your pass to print Function and Call Instructions
   Passes.add(new FuncPtrPass());
-  Passes.run(*M.get());
-
-  std::error_code EC;
-  llvm::raw_fd_ostream OS(InputFilename, EC, llvm::sys::fs::F_None);
-  WriteBitcodeToFile(&(*M), OS);
-  OS.flush();
+  bool isModified = Passes.run(*M.get());
+  if (isModified) {
+    errs()<<"isModified"<<"\n";
+    error_code EC;
+    raw_fd_ostream OS(InputFilename, EC, llvm::sys::fs::F_None);
+    WriteBitcodeToFile(&(*M), OS);
+    OS.flush();
+  }
 }
