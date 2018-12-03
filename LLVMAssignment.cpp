@@ -315,7 +315,7 @@ int main(int argc, char **argv) {
   Passes.add(new FuncPtrPass());
   bool isModified = Passes.run(*M.get());
   if (isModified) {
-    errs()<<"isModified"<<"\n";
+    // errs()<<"isModified"<<"\n";
     error_code EC;
     raw_fd_ostream OS(InputFilename, EC, llvm::sys::fs::F_None);
     WriteBitcodeToFile(&(*M), OS);
