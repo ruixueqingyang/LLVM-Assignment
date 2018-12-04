@@ -36,23 +36,25 @@ using namespace llvm;
 
 /*********add**********/
 // #include <iostream>
-#include <list>
-#include <llvm/IR/BasicBlock.h>   //  BasicBlock
-#include <llvm/IR/Constants.h>    //  ConstantInt
-#include <llvm/IR/Function.h>     //  Function
-#include <llvm/IR/Instruction.h>  //  Instruction
-#include <llvm/IR/Instructions.h> //  CallInst  PHINode
-#include <llvm/IR/Instructions.h> //  BranchInst
-#include <llvm/IR/Module.h>       //  Moudle
-#include <llvm/IR/User.h>         //  User
+#include <llvm/IR/BasicBlock.h>    //  BasicBlock
+#include <llvm/IR/Constants.h>     //  ConstantInt
+#include <llvm/IR/Function.h>      //  Function
+#include <llvm/IR/Instruction.h>   //  Instruction
+#include <llvm/IR/Instructions.h>  //  CallInst  PHINode
+#include <llvm/IR/Instructions.h>  //  BranchInst
+#include <llvm/IR/Module.h>        //  Moudle
+#include <llvm/IR/User.h>          //  User
 #include <llvm/Support/FileSystem.h>
-// #include <llvm/Support/raw_ostream.h>
+#include <list>
+#include "llvm/IR/InstIterator.h"
 using namespace std;
 /*********add**********/
 
 #if LLVM_VERSION_MAJOR >= 4
 static ManagedStatic<LLVMContext> GlobalContext;
-static LLVMContext &getGlobalContext() { return *GlobalContext; }
+static LLVMContext& getGlobalContext() {
+  return *GlobalContext;
+}
 #endif
 /* In LLVM 5.0, when  -O0 passed to clang , the functions generated with clang
  * will have optnone attribute which would lead to some transform passes
@@ -62,7 +64,7 @@ static LLVMContext &getGlobalContext() { return *GlobalContext; }
 struct EnableFunctionOptPass : public FunctionPass {
   static char ID;
   EnableFunctionOptPass() : FunctionPass(ID) {}
-  bool runOnFunction(Function &F) override {
+  bool runOnFunction(Function& F) override {
     if (F.hasFnAttribute(Attribute::OptimizeNone)) {
       F.removeFnAttr(Attribute::OptimizeNone);
     }
@@ -77,56 +79,44 @@ char EnableFunctionOptPass::ID = 0;
 /// Updated 11/10/2017 by fargo: make all functions
 /// processed by mem2reg before this pass.
 struct FuncPtrPass : public ModulePass {
-  static char ID; // Pass identification, replacement for typeid
+  static char ID;  // Pass identification, replacement for typeid
   FuncPtrPass() : ModulePass(ID) {}
   using nameList = list<StringRef>;
   nameList funcList;
   map<int, nameList> funcMap;
-  list<Value *> valueList;
+  list<Value*> valueList;
   StringRef funcName;
 
-  void getCallInst(CallInst *callInst) {
+  void getCallInst(CallInst* callInst) {
     // 返回调用的函数，如果这是间接函数调用，则返回null
-    Function *func = callInst->getCalledFunction();
+    Function* func = callInst->getCalledFunction();
     // 如果是直接引用
     if (func) {
-      // BasicBlock迭代
-      for (Function::iterator bb_i = func->begin(), bb_e = func->end();
-           bb_i != bb_e; ++bb_i) {
-        // Instruction迭代
-        for (BasicBlock::iterator inst_i = bb_i->begin(), inst_e = bb_i->end();
-             inst_i != inst_e; ++inst_i) {
-          Instruction *inst = dyn_cast<Instruction>(inst_i);
-          if (ReturnInst *ret = dyn_cast<ReturnInst>(inst)) {
-            Value *value = ret->getReturnValue();
-            if (Argument *argument = dyn_cast<Argument>(value)) {
-              getArgument(argument);
-            } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
-              getPHINode(pHINode);
-            } else if (CallInst *callInst = dyn_cast<CallInst>(value)) {
-              getCallInst(callInst);
-            }
+      for (inst_iterator inst_it = inst_begin(func), inst_ie = inst_end(func);
+           inst_it != inst_ie; ++inst_it) {
+        if (ReturnInst* ret = dyn_cast<ReturnInst>(&*inst_it)) {
+          Value* value = ret->getReturnValue();
+          if (Argument* argument = dyn_cast<Argument>(value)) {
+            getArgument(argument);
+          } else if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
+            getPHINode(pHINode);
+          } else if (CallInst* callInst = dyn_cast<CallInst>(value)) {
+            getCallInst(callInst);
           }
         }
       }
     } else {
-      Value *value = callInst->getCalledValue();
-      if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
-        for (Value *inComingValue : pHINode->incoming_values()) {
-          if (Function *func = dyn_cast<Function>(inComingValue)) {
-            // BasicBlock迭代
-            for (Function::iterator bb_i = func->begin(), bb_e = func->end();
-                 bb_i != bb_e; ++bb_i) {
-              // Instruction迭代
-              for (BasicBlock::iterator inst_i = bb_i->begin(),
-                                        inst_e = bb_i->end();
-                   inst_i != inst_e; ++inst_i) {
-                Instruction *inst = dyn_cast<Instruction>(inst_i);
-                if (ReturnInst *ret = dyn_cast<ReturnInst>(inst)) {
-                  Value *value = ret->getReturnValue();
-                  if (Argument *argument = dyn_cast<Argument>(value)) {
-                    getArgument(argument);
-                  }
+      Value* value = callInst->getCalledValue();
+      if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
+        for (Value* inComingValue : pHINode->incoming_values()) {
+          if (Function* func = dyn_cast<Function>(inComingValue)) {
+            for (inst_iterator inst_it = inst_begin(func),
+                               inst_ie = inst_end(func);
+                 inst_it != inst_ie; ++inst_it) {
+              if (ReturnInst* ret = dyn_cast<ReturnInst>(&*inst_it)) {
+                Value* value = ret->getReturnValue();
+                if (Argument* argument = dyn_cast<Argument>(value)) {
+                  getArgument(argument);
                 }
               }
             }
@@ -136,14 +126,14 @@ struct FuncPtrPass : public ModulePass {
     }
   }
   // Φ节点
-  void getPHINode(PHINode *pHINode) {
+  void getPHINode(PHINode* pHINode) {
     // incoming_values()的返回值类型是op_range
-    for (Value *inComingVal : pHINode->incoming_values()) {
+    for (Value* inComingVal : pHINode->incoming_values()) {
       if (pHINode = dyn_cast<PHINode>(inComingVal)) {
         getPHINode(pHINode);
-      } else if (Argument *argument = dyn_cast<Argument>(inComingVal)) {
+      } else if (Argument* argument = dyn_cast<Argument>(inComingVal)) {
         getArgument(argument);
-      } else if (Function *func = dyn_cast<Function>(inComingVal)) {
+      } else if (Function* func = dyn_cast<Function>(inComingVal)) {
         pushBackFunc(func->getName());
       }
     }
@@ -153,31 +143,48 @@ struct FuncPtrPass : public ModulePass {
    * User: 所有llvm节点的基类,
    * 对User类的操作都直接作用于其所指向的llvm的Value类型
    **/
-  void getArgument(Argument *arg) {
+  void getArgument(Argument* arg) {
     // Return the index of this formal argument
     int index = arg->getArgNo();
-    Function *parentFunc = arg->getParent();
+    Function* parentFunc = arg->getParent();
     // iterator_range< use_iterator >   uses (),
-    for (User *user : parentFunc->users()) {
-      if (CallInst *callInst = dyn_cast<CallInst>(user)) {
+    for (User* user : parentFunc->users()) {
+      if (CallInst* callInst = dyn_cast<CallInst>(user)) {
         // 获得参数操作数
-        Value *value = callInst->getArgOperand(index);
-        if (Function *func = dyn_cast<Function>(value)) {
+        Value* value = callInst->getArgOperand(index);
+        if (callInst->getCalledFunction() != parentFunc) {
+          Function* func = callInst->getCalledFunction();
+          for (inst_iterator inst_it = inst_begin(func),
+                             inst_ie = inst_end(func);
+               inst_it != inst_ie; ++inst_it) {
+            if (ReturnInst* ret = dyn_cast<ReturnInst>(&*inst_it)) {
+              Value* v = ret->getReturnValue();
+              if (CallInst* call_inst = dyn_cast<CallInst>(v)) {
+                Value* value = call_inst->getArgOperand(index);
+                if (Argument* argument = dyn_cast<Argument>(value)) {
+                  getArgument(argument);
+                }
+              }
+            }
+          }
+        }
+
+        else if (Function* func = dyn_cast<Function>(value)) {
           pushBackFunc(func->getName());
-        } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
+        } else if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
           getPHINode(pHINode);
-        } else if (Argument *argument = dyn_cast<Argument>(value)) {
+        } else if (Argument* argument = dyn_cast<Argument>(value)) {
           getArgument(argument);
         }
-      } else if (PHINode *pHINode = dyn_cast<PHINode>(user)) {
-        for (User *user : pHINode->users()) {
-          if (CallInst *callInst = dyn_cast<CallInst>(user)) {
-            Value *value = callInst->getOperand(index);
-            if (Function *func = dyn_cast<Function>(value)) {
+      } else if (PHINode* pHINode = dyn_cast<PHINode>(user)) {
+        for (User* user : pHINode->users()) {
+          if (CallInst* callInst = dyn_cast<CallInst>(user)) {
+            Value* value = callInst->getOperand(index);
+            if (Function* func = dyn_cast<Function>(value)) {
               pushBackFunc(func->getName());
-            } else if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
+            } else if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
               getPHINode(pHINode);
-            } else if (Argument *argument = dyn_cast<Argument>(value)) {
+            } else if (Argument* argument = dyn_cast<Argument>(value)) {
               getArgument(argument);
             }
           }
@@ -199,20 +206,20 @@ struct FuncPtrPass : public ModulePass {
    * PHINode:
    * CallInst: function call
    */
-  void getFunction(CallInst *callInst) {
+  void getFunction(CallInst* callInst) {
     // Value　is the base class of all values
-    Value *value = callInst->getCalledValue();
-    if (PHINode *pHINode = dyn_cast<PHINode>(value)) {
+    Value* value = callInst->getCalledValue();
+    if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
       getPHINode(pHINode);
-    } else if (Argument *argument = dyn_cast<Argument>(value)) {
+    } else if (Argument* argument = dyn_cast<Argument>(value)) {
       getArgument(argument);
-    } else if (CallInst *callInst = dyn_cast<CallInst>(value)) {
+    } else if (CallInst* callInst = dyn_cast<CallInst>(value)) {
       ;
       getCallInst(callInst);
     }
   }
 
-  bool runOnModule(Module &M) override {
+  bool runOnModule(Module& M) override {
     // Function迭代
     for (Module::iterator func_i = M.begin(), func_e = M.end();
          func_i != func_e; ++func_i) {
@@ -223,12 +230,12 @@ struct FuncPtrPass : public ModulePass {
         for (BasicBlock::iterator inst_i = bb_i->begin(), inst_e = bb_i->end();
              inst_i != inst_e; ++inst_i) {
           // 指令类型
-          Instruction *inst = dyn_cast<Instruction>(inst_i);
+          Instruction* inst = dyn_cast<Instruction>(inst_i);
           // Isa函数的作用是测试给定的变量是否具有指定的类型
           if (isa<CallInst>(inst_i)) {
-            CallInst *callInst = dyn_cast<CallInst>(inst);
+            CallInst* callInst = dyn_cast<CallInst>(inst);
             // 返回调用的函数，如果这是间接函数调用，则返回null
-            Function *func = callInst->getCalledFunction();
+            Function* func = callInst->getCalledFunction();
             // 调用函数的行号
             unsigned callLine = callInst->getDebugLoc().getLine();
             // 如果是间接引用
@@ -250,7 +257,7 @@ struct FuncPtrPass : public ModulePass {
                 for (; it != ie; ++it) {
                   if (it->first == callLine) {
                     it->second.push_back(func->getName());
-                  } else { // 先插入一个空list,再次遍历的时候插入值
+                  } else {  // 先插入一个空list,再次遍历的时候插入值
                     funcMap.insert(pair<int, nameList>(callLine, funcList));
                   }
                 }
@@ -285,11 +292,12 @@ char FuncPtrPass::ID = 0;
 static RegisterPass<FuncPtrPass> X("funcptrpass",
                                    "Print function call instruction");
 
-static cl::opt<std::string>
-    InputFilename(cl::Positional, cl::desc("<filename>.bc"), cl::init(""));
+static cl::opt<std::string> InputFilename(cl::Positional,
+                                          cl::desc("<filename>.bc"),
+                                          cl::init(""));
 
-int main(int argc, char **argv) {
-  LLVMContext &Context = getGlobalContext();
+int main(int argc, char** argv) {
+  LLVMContext& Context = getGlobalContext();
   SMDiagnostic Err;
   // Parse the command line to read the Inputfilename
   cl::ParseCommandLineOptions(
