@@ -87,7 +87,7 @@ struct FuncPtrPass : public ModulePass {
   list<Value*> valueList;
   StringRef funcName;
 
-  void getCallInst(CallInst* callInst) {
+  void handleCallInst(CallInst* callInst) {
     // 返回调用的函数，如果这是间接函数调用，则返回null
     Function* func = callInst->getCalledFunction();
     // 如果是直接引用
@@ -97,11 +97,11 @@ struct FuncPtrPass : public ModulePass {
         if (ReturnInst* ret = dyn_cast<ReturnInst>(&*inst_it)) {
           Value* value = ret->getReturnValue();
           if (Argument* argument = dyn_cast<Argument>(value)) {
-            getArgument(argument);
+            handleArgument(argument);
           } else if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
-            getPHINode(pHINode);
+            handlePHINode(pHINode);
           } else if (CallInst* callInst = dyn_cast<CallInst>(value)) {
-            getCallInst(callInst);
+            handleCallInst(callInst);
           }
         }
       }
@@ -116,7 +116,7 @@ struct FuncPtrPass : public ModulePass {
               if (ReturnInst* ret = dyn_cast<ReturnInst>(&*inst_it)) {
                 Value* value = ret->getReturnValue();
                 if (Argument* argument = dyn_cast<Argument>(value)) {
-                  getArgument(argument);
+                  handleArgument(argument);
                 }
               }
             }
@@ -126,13 +126,13 @@ struct FuncPtrPass : public ModulePass {
     }
   }
   // Φ节点
-  void getPHINode(PHINode* pHINode) {
+  void handlePHINode(PHINode* pHINode) {
     // incoming_values()的返回值类型是op_range
     for (Value* inComingVal : pHINode->incoming_values()) {
       if (pHINode = dyn_cast<PHINode>(inComingVal)) {
-        getPHINode(pHINode);
+        handlePHINode(pHINode);
       } else if (Argument* argument = dyn_cast<Argument>(inComingVal)) {
-        getArgument(argument);
+        handleArgument(argument);
       } else if (Function* func = dyn_cast<Function>(inComingVal)) {
         pushBackFunc(func->getName());
       }
@@ -143,7 +143,7 @@ struct FuncPtrPass : public ModulePass {
    * User: 所有llvm节点的基类,
    * 对User类的操作都直接作用于其所指向的llvm的Value类型
    **/
-  void getArgument(Argument* arg) {
+  void handleArgument(Argument* arg) {
     // Return the index of this formal argument
     int index = arg->getArgNo();
     Function* parentFunc = arg->getParent();
@@ -162,19 +162,18 @@ struct FuncPtrPass : public ModulePass {
               if (CallInst* call_inst = dyn_cast<CallInst>(v)) {
                 Value* value = call_inst->getArgOperand(index);
                 if (Argument* argument = dyn_cast<Argument>(value)) {
-                  getArgument(argument);
+                  handleArgument(argument);
                 }
               }
             }
           }
         }
-
         else if (Function* func = dyn_cast<Function>(value)) {
           pushBackFunc(func->getName());
         } else if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
-          getPHINode(pHINode);
+          handlePHINode(pHINode);
         } else if (Argument* argument = dyn_cast<Argument>(value)) {
-          getArgument(argument);
+          handleArgument(argument);
         }
       } else if (PHINode* pHINode = dyn_cast<PHINode>(user)) {
         for (User* user : pHINode->users()) {
@@ -183,9 +182,9 @@ struct FuncPtrPass : public ModulePass {
             if (Function* func = dyn_cast<Function>(value)) {
               pushBackFunc(func->getName());
             } else if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
-              getPHINode(pHINode);
+              handlePHINode(pHINode);
             } else if (Argument* argument = dyn_cast<Argument>(value)) {
-              getArgument(argument);
+              handleArgument(argument);
             }
           }
         }
@@ -206,16 +205,15 @@ struct FuncPtrPass : public ModulePass {
    * PHINode:
    * CallInst: function call
    */
-  void getFunction(CallInst* callInst) {
+  void handleFunction(CallInst* callInst) {
     // Value　is the base class of all values
     Value* value = callInst->getCalledValue();
     if (PHINode* pHINode = dyn_cast<PHINode>(value)) {
-      getPHINode(pHINode);
+      handlePHINode(pHINode);
     } else if (Argument* argument = dyn_cast<Argument>(value)) {
-      getArgument(argument);
+      handleArgument(argument);
     } else if (CallInst* callInst = dyn_cast<CallInst>(value)) {
-      ;
-      getCallInst(callInst);
+      handleCallInst(callInst);
     }
   }
 
@@ -241,7 +239,7 @@ struct FuncPtrPass : public ModulePass {
             // 如果是间接引用
             if (!func) {
               funcList.clear();
-              getFunction(callInst);
+              handleFunction(callInst);
               funcMap.insert(pair<int, nameList>(callLine, funcList));
             } else {
               // Returns true if the function's name starts with "llvm."
